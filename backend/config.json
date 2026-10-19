@@ -1,0 +1,28 @@
+{
+  "title": "Research Funding Dashboard",
+  "lead_dept": "Smith School",
+  "gtr_cache_hours": 6,
+  "gtr_default_search": "nature recovery",
+  "themes": {
+    "Nature & biodiversity": ["nature", "biodiversity", "ecosystem", "conservation", "forest", "species", "habitat"],
+    "Climate & net zero": ["climate", "carbon", "net zero", "emission", "decarbon", "adaptation", "mitigation"],
+    "Sustainable finance": ["finance", "investor", "bank", "insurance", "capital", "esg", "pension", "investment"],
+    "Water, flood & risk": ["flood", "water", "risk", "resilience", "disaster", "drought"],
+    "Energy & infrastructure": ["energy", "infrastructure", "power", "grid", "renewable"],
+    "Food, land & agriculture": ["agricultur", "food", "land use", "farm", "soil"],
+    "Policy & governance": ["policy", "governance", "regulation", "government", "legislation"],
+    "Health & wellbeing": ["health", "wellbeing", "disease", "nutrition"],
+    "Data, AI & digital": ["data", "machine learning", "artificial intelligence", "satellite", "digital"]
+  },
+  "methods": {
+    "Statistical / econometric analysis": ["econometric", "regression", "statistical", "panel data", "causal"],
+    "Modelling & simulation": ["model", "simulation", "scenario", "integrated assessment", "forecast"],
+    "Machine learning & AI": ["machine learning", "artificial intelligence", "neural", "deep learning", "nlp"],
+    "Remote sensing & geospatial": ["remote sensing", "satellite", "geospatial", "gis", "earth observation"],
+    "Interviews & surveys": ["interview", "survey", "questionnaire", "focus group"],
+    "Case studies & qualitative": ["case study", "case studies", "qualitative", "ethnograph", "discourse"],
+    "Field & experimental work": ["field", "experiment", "trial", "randomi", "pilot"],
+    "Review & synthesis": ["systematic review", "meta-analysis", "synthesis", "literature review"],
+    "Co-design & engagement": ["co-design", "co-produc", "stakeholder", "participatory", "engagement", "workshop"]
+  }
+}
