@@ -24,3 +24,11 @@ select,input{min-width:130px}button.btn.ghost{background:none;color:var(--mute);
 .card{box-shadow:0 1px 2px rgba(16,24,40,.05)}.kpi b{font-size:28px;font-weight:650;letter-spacing:-.01em}.kpi span{font-size:13px}
 .card h3{font-size:14px;font-weight:600;margin-bottom:12px}tbody tr:hover{background:var(--bg)}th{font-size:12px;text-transform:uppercase;letter-spacing:.03em}
 .empty{text-align:center;color:var(--mute);margin-bottom:14px}.recharts-legend-item-text{font-size:12px}
+
+.gridhead{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}.gridhead h3{margin:0}
+.heat{display:grid;gap:6px;align-items:stretch;min-width:560px}.hl{display:flex;align-items:center;font-size:13px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.hy{text-align:center;font-weight:600;padding:4px 0}.hc{display:flex;align-items:center;justify-content:center;height:44px;border-radius:8px;color:#17342a;font-size:15px;cursor:pointer;transition:transform .08s}
+.hc:hover{transform:scale(1.03)}.hc.on{outline:2px solid var(--accent)}.hc.none{background:var(--bg);color:var(--mute);cursor:default}.hc.none:hover{transform:none}
+.legend{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--mute);font-size:13px;margin-top:14px}.sw{width:30px;height:12px;border-radius:3px;display:inline-block}
+.tip{position:fixed;z-index:20;pointer-events:none;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.15)}
+.detail{margin-top:16px;border-top:1px solid var(--line);padding-top:14px}.detail h3{font-size:14px}

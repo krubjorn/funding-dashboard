@@ -33,7 +33,7 @@ const pivot = (rows, xk, gk, val) => {
 export default function App() {
   const [d, err] = useData(), [tab, setTab] = useState(0);
   const [units, setUnits] = useState("£ thousands"), [basis, setBasis] = useState("FY"), [by, setBy] = useState("group");
-  const [funder, setFunder] = useState(""), [dept, setDept] = useState(""), [group, setGroup] = useState(""), [from, setFrom] = useState(""), [liveOnly, setLiveOnly] = useState(true);
+  const [funder, setFunder] = useState(""), [dept, setDept] = useState(""), [barDept, setBarDept] = useState("Geography - SoGE"), [group, setGroup] = useState(""), [from, setFrom] = useState(""), [liveOnly, setLiveOnly] = useState(true);
   const [div, sfx] = UNITS[units], money = (v) => `£${(v / div).toLocaleString(undefined, { maximumFractionDigits: 1 })}${sfx}`;
 
   const apps = useMemo(() => (d?.apps || []).filter((a) => (!funder || a.funder === funder) && (!dept || a.dept === dept) && (!group || a.group === group) && (!from || String(a[basis]) >= from)), [d, funder, dept, group, from, basis]);
@@ -49,6 +49,8 @@ export default function App() {
   const top10 = Object.keys(tot).sort((a, b) => tot[b] - tot[a]).slice(0, 10).reverse();
   const topF = top10.map((f) => ({ name: f, ...Object.fromEntries(depts.map((dp) => [dp, +(won.filter((a) => a.funder === f && a.dept === dp).reduce((t, a) => t + a.Awarded, 0) / div).toFixed(2)])) }));
   const gt = (d.gtr || []).filter((g) => (!dept || g.dept === dept) && (!funder || g.funder === funder) && (!from || basis !== "DecisionYear" || g.year >= +from));
+  const gDepts = [...new Set((d.gtr || []).map((g) => g.dept))].sort();
+  const bd = Object.entries((d.gtr || []).filter((g) => g.dept === barDept).reduce((m, g) => ((m[g.year] = (m[g.year] || 0) + (g.award || 0)), m), {})).map(([year, v]) => ({ name: year, "Total award": +(v / div).toFixed(2) }));
   const gb = Object.values(gt.reduce((m, g) => { const k = g.dept + g.year + g.funder; m[k] = m[k] || { dept: g.dept, funder: g.funder, x: g.year, y: 0, z: 0 }; m[k].y++; m[k].z += g.award || 0; return m; }, {}));
   const sb = Object.values(apps.filter((a) => a.Outcome !== "Unknown" && a[basis] != null).reduce((m, a) => { const x = basis === "FY" ? startYear(a.FY) : a.DecisionYear, k = a.dept + x;
     m[k] = m[k] || { dept: a.dept, x, sub: 0, dec: 0, won: 0, z: 0 }; m[k].sub++; m[k].dec += a.Outcome !== "Pending"; m[k].won += a.Outcome === "Successful"; m[k].z += a.Awarded; return m; }, {}))
@@ -78,9 +80,13 @@ export default function App() {
     {tab === 0 && <div className="grid">
       <Card title={`Funding awarded per year, ${units}`}><Bars data={awardRows} keys={awardKeys} fmt={(v) => v.toFixed(1)} /></Card>
       <Card title={`Top funders, ${units}`}><Bars data={topF} keys={depts} layout="vertical" fmt={(v) => v.toFixed(2)} /></Card>
+      <div className="card"><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><h3>{`Total award by year, ${barDept} (${units})`}</h3>
+        <label><select value={barDept} onChange={(e) => setBarDept(e.target.value)}>{gDepts.map((x) => <option key={x}>{x}</option>)}</select></label></div>
+        <div style={{ height: 330 }}>{bd.length ? <Bars data={bd} keys={["Total award"]} fmt={(v) => v.toFixed(2)} /> : <div className="empty">No awards recorded for this department.</div>}</div></div>
       <Card title="Awards by year and department (UKRI awards)" h={420}><Bubbles rows={gb} depts={[...new Set(gb.map((r) => r.dept))].sort()} xLabel="Year" yLabel="Number of awards" yFmt={(v) => v}
         tip={(p) => <><b>{p.dept}</b><br />Year: {p.x}<br />Number of awards: {p.y}<br />Total award: £{Math.round(p.z).toLocaleString()}<br />Funding organisation: {p.funder}</>} /></Card></div>}
-    {tab === 1 && <div className="grid">
+    {tab === 1 && <SuccessGrid apps={(d.apps || []).filter((a) => (!funder || a.funder === funder) && (!group || a.group === group) && (!from || a[basis] == null || String(a[basis]) >= from))} gtr={d.gtr || []} basis={basis} depts={uniq("dept")} />}
+    {tab === 1 && <div className="grid" style={{ marginTop: 14 }}>
       <Card title="Applications submitted and outcomes"><Bars data={appRows} keys={["Successful", "Unsuccessful", "Pending", "Unknown"].filter((k) => appRows.some((r) => r[k]))} stacked={false} /></Card>
       <Card title="Success rate by year and department" h={420}><Bubbles rows={sb} depts={[...new Set(sb.map((r) => r.dept))].sort()} xLabel="Year" yLabel="Success rate" xFmt={(v) => yr(v, basis)} yFmt={(v) => v + "%"}
         tip={(p) => <><b>{p.dept}</b><br />Year: {yr(p.x, basis)}<br />Success rate: {p.y}% (of decided)<br />Submitted: {p.sub}<br />Decided: {p.dec}<br />Successful: {p.won}<br />Funding awarded: £{Math.round(p.z).toLocaleString()}</>} /></Card>
@@ -129,3 +135,42 @@ const Bubbles = ({ rows, xLabel, yLabel, xFmt, yFmt, tip, depts }) => (
     <Legend />
     {depts.map((dp, i) => <Scatter key={dp} name={dp} data={rows.filter((r) => r.dept === dp)} fill={COLORS[i % COLORS.length]} fillOpacity={0.6} />)}
   </ScatterChart></ResponsiveContainer>);
+
+const UKRI = ["ESRC", "NERC", "EPSRC", "AHRC", "BBSRC", "MRC", "STFC", "RCUK", "TSB"];
+const shade = (r) => (r < 20 ? "#fde0e0" : r < 30 ? "#fff3c4" : r < 40 ? "#d9f0e1" : "#a7e0bf");
+function SuccessGrid({ apps, gtr, basis, depts }) {
+  const [dp, setDp] = useState(""), [all, setAll] = useState(false), [tip, setTip] = useState(null), [sel, setSel] = useState(null);
+  const rows = apps.filter((a) => a.Outcome !== "Unknown" && a[basis] != null && (!dp || a.dept === dp));
+  const xOf = (a) => (basis === "FY" ? startYear(a.FY) : a.DecisionYear);
+  const years = [...new Set(rows.map(xOf))].sort(), cell = {}, tot = {}, name = {};
+  rows.forEach((a) => { const k = a.funderCode + "|" + xOf(a); cell[k] = cell[k] || { n: 0, d: 0, w: 0 }; cell[k].n++; cell[k].d += a.Outcome !== "Pending"; cell[k].w += a.Outcome === "Successful";
+    tot[a.funderCode] = (tot[a.funderCode] || 0) + 1; name[a.funderCode] = a.funder; });
+  const funders = Object.keys(tot).sort((a, b) => tot[b] - tot[a]).slice(0, all ? 999 : 12);
+  const go = (f, x) => { setSel({ f, x });
+    if (!UKRI.includes(f)) return;
+    const m = gtr.filter((g) => g.funder === f && (!dp || g.dept === dp) && (basis === "FY" ? g.year === x || g.year === x + 1 : g.year === x));
+    const term = m.length === 1 ? null : `${name[f]} ${dp ? dp.replace(/ - SoGE| SoGE| of Enterprise and the Env/, "") : "Oxford"}`;
+    window.open(term ? `https://gtr.ukri.org/search/project?term=${encodeURIComponent(term)}` : m[0].url, "_blank", "noopener"); };
+  const open = sel && { won: rows.filter((a) => a.funderCode === sel.f && xOf(a) === sel.x && a.Outcome === "Successful"),
+    gtr: gtr.filter((g) => g.funder === sel.f && (!dp || g.dept === dp) && (basis === "FY" ? g.year === sel.x || g.year === sel.x + 1 : g.year === sel.x)) };
+  return (<div className="card"><div className="gridhead"><h3>Success rate by funder and year</h3>
+    <div className="bar" style={{ border: 0, padding: 0, margin: 0, background: "none" }}>
+      <label><select value={dp} onChange={(e) => { setDp(e.target.value); setSel(null); }}><option value="">All departments and centres</option>{depts.map((x) => <option key={x}>{x}</option>)}</select></label>
+      <label><select value={all ? "all" : "top"} onChange={(e) => setAll(e.target.value === "all")}><option value="top">Top 12 funders</option><option value="all">All funders</option></select></label></div></div>
+    {!funders.length ? <div className="empty">No decided applications for this selection.</div> : <div style={{ overflowX: "auto" }}>
+      <div className="heat" style={{ gridTemplateColumns: `200px repeat(${years.length}, minmax(84px, 1fr))` }}>
+        <div className="hl">Funder</div>{years.map((y) => <div key={y} className="hy">{yr(y, basis)}</div>)}
+        {funders.map((f) => [<div key={f} className="hl" title={name[f]}>{name[f]}</div>, ...years.map((y) => { const c = cell[f + "|" + y];
+          if (!c || !c.d) return <div key={f + y} className="hc none">–</div>; const r = Math.round((100 * c.w) / c.d), on = sel && sel.f === f && sel.x === y;
+          return <div key={f + y} className={"hc" + (on ? " on" : "")} style={{ background: shade(r) }} onClick={() => go(f, y)}
+            onMouseMove={(e) => setTip({ x: e.clientX, y: e.clientY, t: `${name[f]}, ${yr(y, basis)}`, a: `${c.d} decided, ${c.w} approved${c.n > c.d ? `, ${c.n - c.d} pending` : ""}${UKRI.includes(f) ? ". Click to open on UKRI Gateway" : ""}` })} onMouseLeave={() => setTip(null)}>{r}%</div>; })])}
+      </div></div>}
+    <div className="legend"><span>Lower success</span><span className="sw" style={{ background: shade(10) }} /><span className="sw" style={{ background: shade(25) }} /><span className="sw" style={{ background: shade(35) }} /><span className="sw" style={{ background: shade(50) }} /><span>Higher success</span></div>
+    {tip && <div className="tip" style={{ left: tip.x + 14, top: tip.y + 14 }}><b>{tip.t}</b><br />{tip.a}</div>}
+    {open && <div className="detail"><h3>{name[sel.f]}, {yr(sel.x, basis)}{dp ? `, ${dp}` : ""} <span className="pill" style={{ cursor: "pointer" }} onClick={() => setSel(null)}>Close</span></h3>
+      {open.won.length ? <Table head={["Approved project", "Department", "Awarded"]} rows={open.won.map((a) => [a.title, a.dept, "£" + Math.round(a.Awarded).toLocaleString()])} /> : <div className="note">No approved projects in this cell.</div>}
+      {open.gtr.length ? <><h3 style={{ marginTop: 14 }}>Matching projects on UKRI Gateway</h3><Table head={["Project", "Department", "Link"]} rows={open.gtr.map((g) => [g.title, g.dept, <a href={g.url} target="_blank" rel="noreferrer">View on UKRI Gateway</a>])} /></>
+        : <div className="note">{UKRI.includes(sel.f) ? <a href={`https://gtr.ukri.org/search/project?term=${encodeURIComponent(name[sel.f] + " Oxford")}`} target="_blank" rel="noreferrer">Search UKRI Gateway for this funder</a> : "This funder is not listed on UKRI Gateway."}</div>}
+    </div>}
+  </div>);
+}
