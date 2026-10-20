@@ -37,14 +37,14 @@ export default function App() {
   const [div, sfx] = UNITS[units], money = (v) => `£${(v / div).toLocaleString(undefined, { maximumFractionDigits: 1 })}${sfx}`;
 
   const apps = useMemo(() => (d?.apps || []).filter((a) => (!funder || a.funder === funder) && (!dept || a.dept === dept) && (!group || a.group === group) && (!from || String(a[basis]) >= from)), [d, funder, dept, group, from, basis]);
-  if (err) return <div className="wrap err">Could not load data: {String(err)}</div>;
-  if (!d) return <div className="wrap">Loading…</div>;
+  if (err) return <div className="wrap err">The dashboard could not load. Please refresh the page.</div>;
+  if (!d) return <div className="wrap">Loading</div>;
   const years = [...new Set(d.apps.map((a) => a[basis]).filter(Boolean))].sort(), uniq = (k) => [...new Set(d.apps.map((a) => a[k]).filter(Boolean))].sort();
   const won = apps.filter((a) => a.Outcome === "Successful"), decided = apps.filter((a) => ["Successful", "Unsuccessful"].includes(a.Outcome));
   const [awardRows, awardKeys] = pivot(won, basis, by, (a) => a.Awarded / div);
   const [appRows] = pivot(apps, basis, "Outcome", () => 1);
   const rate = Object.values(decided.reduce((m, a) => { const k = a[by] || "Other"; m[k] = m[k] || { name: k, n: 0, w: 0 }; m[k].n++; m[k].w += a.Outcome === "Successful"; return m; }, {}))
-    .filter((r) => r.n >= 3).map((r) => ({ name: r.name, "Success rate %": Math.round((100 * r.w) / r.n), n: r.n })).sort((a, b) => a["Success rate %"] - b["Success rate %"]);
+    .filter((r) => r.n >= 3).map((r) => ({ name: r.name, "Success rate": Math.round((100 * r.w) / r.n), n: r.n })).sort((a, b) => a["Success rate"] - b["Success rate"]);
   const depts = uniq("dept"), tot = won.reduce((m, a) => ((m[a.funder] = (m[a.funder] || 0) + a.Awarded), m), {});
   const top10 = Object.keys(tot).sort((a, b) => tot[b] - tot[a]).slice(0, 10).reverse();
   const topF = top10.map((f) => ({ name: f, ...Object.fromEntries(depts.map((dp) => [dp, +(won.filter((a) => a.funder === f && a.dept === dp).reduce((t, a) => t + a.Awarded, 0) / div).toFixed(2)])) }));
@@ -56,8 +56,8 @@ export default function App() {
   const projs = d.projects.filter((p) => !liveOnly || p.live);
 
   return (<div className="wrap">
-    <h1>Research Funding Dashboard</h1><div className="note">Funding awards and application outcomes by department and centre.</div>
-    <div className="tabs">{["Funding awards", "Application success", "Live projects", "Research themes (UKRI GtR)"].map((t, i) =>
+    <header><h1>Research Funding Dashboard</h1></header>
+    <div className="tabs">{["Funding awards", "Application success", "Live projects", "Research themes"].map((t, i) =>
       <button key={t} className={"tab" + (tab === i ? " on" : "")} onClick={() => setTab(i)}>{t}</button>)}</div>
 
     {tab < 2 && <div className="bar">
@@ -68,22 +68,24 @@ export default function App() {
       <label>Funder group<select value={group} onChange={(e) => setGroup(e.target.value)}><option value="">All</option>{uniq("group").map((x) => <option key={x}>{x}</option>)}</select></label>
       <label>Department and Centres<select value={dept} onChange={(e) => setDept(e.target.value)}><option value="">All</option>{uniq("dept").map((x) => <option key={x}>{x}</option>)}</select></label>
       <label>Funder<select value={funder} onChange={(e) => setFunder(e.target.value)}><option value="">All</option>{uniq("funder").map((x) => <option key={x}>{x}</option>)}</select></label>
+      <button className="btn ghost" onClick={() => { setFunder(""); setDept(""); setGroup(""); setFrom(""); }}>Reset filters</button>
     </div>}
 
-    {tab < 2 && <div className="kpis"><Kpi v={apps.length} l="Applications" /><Kpi v={won.length} l="Successful" />
-      <Kpi v={decided.length ? Math.round((100 * won.length) / decided.length) + "%" : "–"} l="Success rate (decided)" /><Kpi v={money(sum(won, (a) => a.Awarded))} l="Funding awarded" /></div>}
+    {tab < 2 && !apps.length && <div className="card empty">No applications match the selected filters.</div>}
+    {tab < 2 && <div className="kpis"><Kpi v={apps.length} l="Applications submitted" /><Kpi v={won.length} l="Funded" />
+      <Kpi v={decided.length ? Math.round((100 * won.length) / decided.length) + "%" : "–"} l="Success rate" /><Kpi v={money(sum(won, (a) => a.Awarded))} l="Funding awarded" /></div>}
 
     {tab === 0 && <div className="grid">
-      <Card title={`Funding awarded per year (${units})`}><Bars data={awardRows} keys={awardKeys} fmt={(v) => v.toFixed(1)} /></Card>
-      <Card title={`Top funders by department and centre (${units})`}><Bars data={topF} keys={depts} layout="vertical" fmt={(v) => v.toFixed(2)} /></Card>
-      <Card title="Awards and funding by year for departments and centres (UKRI awards)" h={420}><Bubbles rows={gb} depts={[...new Set(gb.map((r) => r.dept))].sort()} xLabel="Year" yLabel="Number of awards" yFmt={(v) => v}
+      <Card title={`Funding awarded per year, ${units}`}><Bars data={awardRows} keys={awardKeys} fmt={(v) => v.toFixed(1)} /></Card>
+      <Card title={`Top funders, ${units}`}><Bars data={topF} keys={depts} layout="vertical" fmt={(v) => v.toFixed(2)} /></Card>
+      <Card title="Awards by year and department (UKRI awards)" h={420}><Bubbles rows={gb} depts={[...new Set(gb.map((r) => r.dept))].sort()} xLabel="Year" yLabel="Number of awards" yFmt={(v) => v}
         tip={(p) => <><b>{p.dept}</b><br />Year: {p.x}<br />Number of awards: {p.y}<br />Total award: £{Math.round(p.z).toLocaleString()}<br />Funding organisation: {p.funder}</>} /></Card></div>}
     {tab === 1 && <div className="grid">
-      <Card title="Applications sent vs successful"><Bars data={appRows} keys={["Successful", "Unsuccessful", "Pending", "Unknown"].filter((k) => appRows.some((r) => r[k]))} stacked={false} /></Card>
-      <Card title="Success rate by year, department and centre (bubble size = funding awarded)" h={420}><Bubbles rows={sb} depts={[...new Set(sb.map((r) => r.dept))].sort()} xLabel="Year" yLabel="Success rate" xFmt={(v) => yr(v, basis)} yFmt={(v) => v + "%"}
+      <Card title="Applications submitted and outcomes"><Bars data={appRows} keys={["Successful", "Unsuccessful", "Pending", "Unknown"].filter((k) => appRows.some((r) => r[k]))} stacked={false} /></Card>
+      <Card title="Success rate by year and department" h={420}><Bubbles rows={sb} depts={[...new Set(sb.map((r) => r.dept))].sort()} xLabel="Year" yLabel="Success rate" xFmt={(v) => yr(v, basis)} yFmt={(v) => v + "%"}
         tip={(p) => <><b>{p.dept}</b><br />Year: {yr(p.x, basis)}<br />Success rate: {p.y}% (of decided)<br />Submitted: {p.sub}<br />Decided: {p.dec}<br />Successful: {p.won}<br />Funding awarded: £{Math.round(p.z).toLocaleString()}</>} /></Card>
-      <Card title={`Success rate by ${GROUPS[by].toLowerCase()} (min. 3 decided)`} h={Math.max(330, rate.length * 34 + 60)}><Bars data={rate} keys={["Success rate %"]} layout="vertical" /></Card></div>}
-    {tab === 2 && <><div className="bar"><label><span>Show</span><select value={liveOnly ? "live" : "all"} onChange={(e) => setLiveOnly(e.target.value === "live")}><option value="live">Still running</option><option value="all">All awarded</option></select></label></div>
+      <Card title={`Success rate by ${GROUPS[by].toLowerCase()}`} h={Math.max(330, rate.length * 34 + 60)}><Bars data={rate} keys={["Success rate"]} layout="vertical" /></Card></div>}
+    {tab === 2 && <><div className="bar"><label><span>Projects</span><select value={liveOnly ? "live" : "all"} onChange={(e) => setLiveOnly(e.target.value === "live")}><option value="live">Still running</option><option value="all">All awarded</option></select></label></div>
       <div className="kpis"><Kpi v={projs.length} l="Projects" /><Kpi v={money(sum(projs, (p) => p.value))} l="Total value" /></div>
       <div className="card"><Table head={["Ref", "Title", "Department", "Funder", "Start", "End", "Value"]} rows={projs.map((p) => [p.ref, p.title, p.dept, p.funder, p.start, p.end, money(p.value)])} /></div></>}
     {tab === 3 && <Themes />}
@@ -102,14 +104,14 @@ function Themes() {
   const rows = (res?.rows || []).filter((r) => !pick || r.themes.includes(pick) || r.methods.includes(pick));
   return (<>
     <div className="bar">
-      <label>Source<select value={mode} onChange={(e) => setMode(e.target.value)}><option value="own">Our awarded projects (matched on GtR)</option><option value="search">GtR search (any topic)</option></select></label>
-      {mode === "search" && <label>Search term<input value={q} placeholder="e.g. biodiversity finance" onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run(false)} /></label>}
-      <button className="btn" onClick={() => run(true)} disabled={busy}>{busy ? "Fetching…" : "Refresh from GtR"}</button>
+      <label>View<select value={mode} onChange={(e) => setMode(e.target.value)}><option value="own">Our funded projects</option><option value="search">Search UKRI awards by topic</option></select></label>
+      {mode === "search" && <label>Topic<input value={q} placeholder="e.g. biodiversity" onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run(false)} /></label>}
+      <button className="btn" onClick={() => run(true)} disabled={busy}>{busy ? "Updating" : "Update"}</button>
     </div>
-    {err && <div className="card err">{err}. Check your internet connection and try again.</div>}
-    {res && <><div className="note">{mode === "own" ? `Matched ${res.matched} of ${res.total} projects on GtR by exact title. ` : `${res.rows.length} projects for “${res.query}”. `}Live from the UKRI API · fetched {res.fetched}. Themes and methods are tagged by keywords in config.json.</div>
-      <div className="grid"><Card title="Research themes (projects)" h={Math.max(300, res.themes.length * 32 + 40)}><Click data={res.themes} onPick={setPick} /></Card>
-        <Card title="Methods & approaches (projects)" h={Math.max(300, res.methods.length * 32 + 40)}><Click data={res.methods} onPick={setPick} /></Card></div>
+    {err && <div className="card err">Research themes are not available right now. Please try again shortly.</div>}
+    {res && <><div className="kpis"><Kpi v={res.rows.length} l="Projects analysed" /><Kpi v={res.themes.filter((t) => t.name !== "Other").length} l="Research themes" /><Kpi v={res.methods.filter((t) => t.name !== "Other").length} l="Methods identified" /></div>
+      <div className="grid"><Card title="Research themes" h={Math.max(300, res.themes.length * 32 + 40)}><Click data={res.themes} onPick={setPick} /></Card>
+        <Card title="Methods and approaches" h={Math.max(300, res.methods.length * 32 + 40)}><Click data={res.methods} onPick={setPick} /></Card></div>
       <div className="card" style={{ marginTop: 14 }}><h3>Projects {pick && <span className="pill" style={{ cursor: "pointer" }} onClick={() => setPick("")}>{pick} ✕</span>}</h3>
         <Table head={["Title", "Funder", "Themes", "Methods"]} rows={rows.map((r) => [<a href={r.link} target="_blank" rel="noreferrer">{r.title}</a>, r.funder, r.themes.map((t) => <span className="pill" key={t}>{t}</span>), r.methods.map((t) => <span className="pill" key={t}>{t}</span>)])} /></div></>}
   </>);
