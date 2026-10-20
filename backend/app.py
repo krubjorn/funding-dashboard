@@ -17,22 +17,25 @@ def fy_label(v):
     return f"20{d[0][:2]}/{d[0][2:]}" if d else None
 
 def load():
-    a = pd.read_csv(ROOT / "data" / "applications.csv").drop_duplicates("Project Ref", keep="last")
-    a["Awarded"] = pd.to_numeric(a["Amount Awarded"].astype(str).str.replace(r"[£,]", "", regex=True), errors="coerce").fillna(0)
+    a = pd.read_csv(ROOT / "data" / "applications.csv").drop_duplicates("ref", keep="last")
+    a["Awarded"] = pd.to_numeric(a["Amount Awarded"], errors="coerce").fillna(0)
     a["Outcome"] = np.select([a["Approved"] == 1, a["Fund Deci Status Desc"].eq("Rejected by funder"), a["Fund Deci Status Desc"].eq("Submitted to funder")],
                              ["Successful", "Unsuccessful", "Pending"], "Unknown")
-    a["DecisionYear"] = pd.to_datetime(a["Funder Decision Date *"], dayfirst=True, errors="coerce").dt.year
+    a["DecisionYear"] = pd.to_datetime(a["Decision Date"], dayfirst=True, errors="coerce").dt.year
     a["FY"] = a["Financial Year"].map(fy_label)
-    apps = a.rename(columns={"Project Ref": "ref", "Short Title": "title", "funder_name": "funder", "funder_code": "funderCode", "Award Type Group": "group",
-                             "Scheme Type": "scheme", "department_name": "dept", "Lead Department?": "role"})
-    apps = apps[["ref", "title", "funder", "funderCode", "group", "scheme", "dept", "role", "FY", "DecisionYear", "Awarded", "Outcome"]]
+    a["group"] = a["Award Type Group"].replace(CFG["group_rename"])
+    apps = a[["ref", "title", "funder", "funderCode", "group", "scheme", "dept", "role", "FY", "DecisionYear", "Awarded", "Outcome"]]
     s = pd.read_csv(ROOT / "data" / "project_summary.csv", parse_dates=["Awarded Start Date", "Awarded End Date"])
-    s = s[(s["Lead Department (T)"] == CFG["lead_dept"]) & s["Costing Type (T)"].eq("Award") & s["Costing Status (T)"].eq("Approved")]
+    s = s[s["Lead Department (T)"].isin(CFG["project_depts"]) & s["Costing Type (T)"].eq("Award") & s["Costing Status (T)"].eq("Approved")]
     s = s.dropna(subset=["Awarded Start Date"]).drop_duplicates("X5 Ref", keep="last")
     s["live"] = s["Awarded End Date"] >= pd.Timestamp(dt.date.today())
-    proj = pd.DataFrame({"ref": s["X5 Ref"], "title": s["Project Title"], "funder": s["Funder Name"], "start": s["Awarded Start Date"].dt.strftime("%Y-%m-%d"),
+    proj = pd.DataFrame({"ref": s["X5 Ref"], "title": s["Project Title"], "dept": s["Lead Department (T)"], "funder": s["Funder Name"], "start": s["Awarded Start Date"].dt.strftime("%Y-%m-%d"),
                          "end": s["Awarded End Date"].dt.strftime("%Y-%m-%d"), "value": s["Total Price"], "live": s["live"]})
     return apps, proj
+
+def load_gtr():
+    g = pd.read_csv(ROOT / "data" / "gtr_awards.csv")
+    return g.dropna(subset=["year"]).astype({"year": int})
 
 def tag(text, key):
     t = f" {str(text).lower()} "
@@ -74,7 +77,8 @@ def config(): return jsonify({"title": CFG["title"], "defaultSearch": CFG["gtr_d
 @app.get("/api/data")
 def data():
     apps, proj = load()
-    return jsonify({"apps": apps.replace({np.nan: None}).to_dict("records"), "projects": proj.replace({np.nan: None}).to_dict("records")})
+    return jsonify({"apps": apps.replace({np.nan: None}).to_dict("records"), "projects": proj.replace({np.nan: None}).to_dict("records"),
+                    "gtr": load_gtr().replace({np.nan: None}).to_dict("records")})
 
 @app.get("/api/themes/own")
 def themes_own():
