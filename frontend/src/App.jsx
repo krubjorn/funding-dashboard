@@ -55,7 +55,6 @@ export default function App() {
   const sb = Object.values(apps.filter((a) => a.Outcome !== "Unknown" && a[basis] != null).reduce((m, a) => { const x = basis === "FY" ? startYear(a.FY) : a.DecisionYear, k = a.dept + x;
     m[k] = m[k] || { dept: a.dept, x, sub: 0, dec: 0, won: 0, z: 0 }; m[k].sub++; m[k].dec += a.Outcome !== "Pending"; m[k].won += a.Outcome === "Successful"; m[k].z += a.Awarded; return m; }, {}))
     .filter((r) => r.dec > 0).map((r) => ({ ...r, y: Math.round((100 * r.won) / r.dec) }));
-  const projs = d.projects.filter((p) => !liveOnly || p.live);
 
   return (<div className="wrap">
     <header><h1>Research Funding Dashboard</h1></header>
@@ -91,9 +90,7 @@ export default function App() {
       <Card title="Success rate by year and department" h={420}><Bubbles rows={sb} depts={[...new Set(sb.map((r) => r.dept))].sort()} xLabel="Year" yLabel="Success rate" xFmt={(v) => yr(v, basis)} yFmt={(v) => v + "%"}
         tip={(p) => <><b>{p.dept}</b><br />Year: {yr(p.x, basis)}<br />Success rate: {p.y}% (of decided)<br />Submitted: {p.sub}<br />Decided: {p.dec}<br />Successful: {p.won}<br />Funding awarded: £{Math.round(p.z).toLocaleString()}</>} /></Card>
       <Card title={`Success rate by ${GROUPS[by].toLowerCase()}`} h={Math.max(330, rate.length * 34 + 60)}><Bars data={rate} keys={["Success rate"]} layout="vertical" /></Card></div>}
-    {tab === 2 && <><div className="bar"><label><span>Projects</span><select value={liveOnly ? "live" : "all"} onChange={(e) => setLiveOnly(e.target.value === "live")}><option value="live">Still running</option><option value="all">All awarded</option></select></label></div>
-      <div className="kpis"><Kpi v={projs.length} l="Projects" /><Kpi v={money(sum(projs, (p) => p.value))} l="Total value" /></div>
-      <div className="card"><Table head={["Ref", "Title", "Department", "Funder", "Start", "End", "Value"]} rows={projs.map((p) => [p.ref, p.title, p.dept, p.funder, p.start, p.end, money(p.value)])} /></div></>}
+    {tab === 2 && <Live d={d} money={money} />}
     {tab === 3 && <Themes />}
   </div>);
 }
@@ -101,27 +98,56 @@ export default function App() {
 const Table = ({ head, rows }) => (<div style={{ overflowX: "auto", maxHeight: 520 }}><table><thead><tr>{head.map((h) => <th key={h}>{h}</th>)}</tr></thead>
   <tbody>{rows.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j}>{c}</td>)}</tr>)}</tbody></table></div>);
 
-function Themes() {
-  const [mode, setMode] = useState("own"), [q, setQ] = useState(""), [res, setRes] = useState(null), [err, setErr] = useState(null), [busy, setBusy] = useState(false), [pick, setPick] = useState("");
-  const run = (refresh) => { setBusy(true); setErr(null);
-    get(mode === "own" ? `/api/themes/own${refresh ? "?refresh=1" : ""}` : `/api/themes/search?q=${encodeURIComponent(q || "nature recovery")}${refresh ? "&refresh=1" : ""}`)
-      .then(setRes).catch((e) => { setErr(e.message); setRes(null); }).finally(() => setBusy(false)); };
-  useEffect(() => { setRes(null); run(false); /* eslint-disable-next-line */ }, [mode]);
-  const rows = (res?.rows || []).filter((r) => !pick || r.themes.includes(pick) || r.methods.includes(pick));
+const norm = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const useOxford = () => {
+  const [o, setO] = useState(null), [err, setErr] = useState(false), [busy, setBusy] = useState(false);
+  const load = (refresh) => { setBusy(true); get("/api/oxford" + (refresh ? "?refresh=1" : "")).then((r) => { setO(r); setErr(false); }).catch(() => setErr(true)).finally(() => setBusy(false)); };
+  useEffect(() => { load(false); }, []);
+  return [o, err, busy, load];
+};
+const Sel = ({ label, value, set, opts, all }) => (<label>{label}<select value={value} onChange={(e) => set(e.target.value)}><option value="">{all}</option>{opts.map((x) => <option key={x}>{x}</option>)}</select></label>);
+const Pills = ({ items }) => items.map((t) => <span className="pill" key={t}>{t}</span>);
+const count = (rows, k) => Object.entries(rows.reduce((m, r) => (r[k].forEach((x) => (m[x] = (m[x] || 0) + 1)), m), {})).map(([name, n]) => ({ name, Projects: n })).sort((a, b) => a.Projects - b.Projects);
+
+function Live({ d, money }) {
+  const [o, err, busy, load] = useOxford(), [liveOnly, setLiveOnly] = useState(true), [src, setSrc] = useState(""), [dp, setDp] = useState("");
+  const seen = new Set(d.projects.map((p) => norm(p.title))), linked = Object.fromEntries((o?.rows || []).map((r) => [norm(r.title), r.link]));
+  const all = [...d.projects.map((p) => ({ ...p, link: linked[norm(p.title)], source: linked[norm(p.title)] ? "Internal records and UKRI" : "Internal records" })),
+    ...(o?.rows || []).filter((r) => !seen.has(norm(r.title))).map((r) => ({ ref: r.id, title: r.title, dept: r.dept, funder: r.funder, start: r.start, end: r.end, value: r.value, live: r.live, link: r.link, source: "UKRI Gateway" }))]
+    .filter((p) => (!liveOnly || p.live) && (!src || p.source.includes(src)) && (!dp || p.dept === dp)).sort((a, b) => String(a.end).localeCompare(String(b.end)));
   return (<>
     <div className="bar">
-      <label>View<select value={mode} onChange={(e) => setMode(e.target.value)}><option value="own">Our funded projects</option><option value="search">Search UKRI awards by topic</option></select></label>
-      {mode === "search" && <label>Topic<input value={q} placeholder="e.g. biodiversity" onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run(false)} /></label>}
-      <button className="btn" onClick={() => run(true)} disabled={busy}>{busy ? "Updating" : "Update"}</button>
-    </div>
-    {err && <div className="card err">Research themes are not available right now. Please try again shortly.</div>}
-    {res && <><div className="kpis"><Kpi v={res.rows.length} l="Projects analysed" /><Kpi v={res.themes.filter((t) => t.name !== "Other").length} l="Research themes" /><Kpi v={res.methods.filter((t) => t.name !== "Other").length} l="Methods identified" /></div>
-      <div className="grid"><Card title="Research themes" h={Math.max(300, res.themes.length * 32 + 40)}><Click data={res.themes} onPick={setPick} /></Card>
-        <Card title="Methods and approaches" h={Math.max(300, res.methods.length * 32 + 40)}><Click data={res.methods} onPick={setPick} /></Card></div>
-      <div className="card" style={{ marginTop: 14 }}><h3>Projects {pick && <span className="pill" style={{ cursor: "pointer" }} onClick={() => setPick("")}>{pick} ✕</span>}</h3>
-        <Table head={["Title", "Funder", "Themes", "Methods"]} rows={rows.map((r) => [<a href={r.link} target="_blank" rel="noreferrer">{r.title}</a>, r.funder, r.themes.map((t) => <span className="pill" key={t}>{t}</span>), r.methods.map((t) => <span className="pill" key={t}>{t}</span>)])} /></div></>}
+      <label>Projects<select value={liveOnly ? "live" : "all"} onChange={(e) => setLiveOnly(e.target.value === "live")}><option value="live">Still running</option><option value="all">All awarded</option></select></label>
+      <label>Source<select value={src} onChange={(e) => setSrc(e.target.value)}><option value="">All sources</option><option value="Internal">Internal records</option><option value="UKRI">UKRI Gateway</option></select></label>
+      <Sel label="Department and Centres" value={dp} set={setDp} opts={[...new Set([...d.projects, ...(o?.rows || [])].map((p) => p.dept).filter(Boolean))].sort()} all="All" />
+      <button className="btn" onClick={() => load(true)} disabled={busy}>{busy ? "Updating" : "Update from UKRI"}</button></div>
+    {err && <div className="card err" style={{ marginBottom: 14 }}>UKRI project data is not available right now. Internal records are shown.</div>}
+    <div className="kpis"><Kpi v={all.length} l="Projects" /><Kpi v={money(sum(all, (p) => p.value))} l="Total value" /><Kpi v={all.filter((p) => p.source === "UKRI Gateway").length} l="Added from UKRI" /></div>
+    <div className="card"><Table head={["Title", "Department", "Funder", "Start", "End", "Value", "Source"]}
+      rows={all.map((p) => [p.link ? <a href={p.link} target="_blank" rel="noreferrer">{p.title}</a> : p.title, p.dept, p.funder, p.start, p.end, money(p.value), p.source])} /></div></>);
+}
+
+function Themes() {
+  const [o, err, busy, load] = useOxford(), [dp, setDp] = useState(""), [th, setTh] = useState(""), [me, setMe] = useState(""), [yv, setYv] = useState(""), [q, setQ] = useState("");
+  const all = o?.rows || [], u = (k) => [...new Set(all.flatMap((r) => (Array.isArray(r[k]) ? r[k] : [r[k]])).filter(Boolean))].sort();
+  const rows = all.filter((r) => (!dp || r.dept === dp) && (!th || r.themes.includes(th)) && (!me || r.methods.includes(me)) && (!yv || String(r.year) === yv) && (!q || norm(r.title).includes(norm(q))));
+  const themes = count(rows, "themes"), methods = count(rows, "methods");
+  return (<>
+    <div className="bar"><Sel label="Department and Centres" value={dp} set={setDp} opts={u("dept")} all="All" /><Sel label="Theme" value={th} set={setTh} opts={u("themes")} all="All themes" />
+      <Sel label="Method" value={me} set={setMe} opts={u("methods")} all="All methods" /><Sel label="Year granted" value={yv} set={setYv} opts={u("year").map(String).sort().reverse()} all="All years" />
+      <label>Search<input value={q} placeholder="Project title" onChange={(e) => setQ(e.target.value)} /></label>
+      <button className="btn ghost" onClick={() => { setDp(""); setTh(""); setMe(""); setYv(""); setQ(""); }}>Reset filters</button>
+      <button className="btn" onClick={() => load(true)} disabled={busy}>{busy ? "Updating" : "Update"}</button></div>
+    {err && <div className="card err" style={{ marginBottom: 14 }}>Research themes are not available right now. Please try again shortly.</div>}
+    {o && <><div className="kpis"><Kpi v={rows.length} l="Projects" /><Kpi v={themes.filter((t) => t.name !== "Other").length} l="Research themes" /><Kpi v={methods.filter((t) => t.name !== "Other").length} l="Methods" /></div>
+      {!rows.length ? <div className="card empty">No projects match the selected filters.</div> : <>
+        <div className="grid"><Card title="Research themes" h={Math.max(300, themes.length * 32 + 40)}><Bars data={themes} keys={["Projects"]} layout="vertical" /></Card>
+          <Card title="Methods and approaches" h={Math.max(300, methods.length * 32 + 40)}><Bars data={methods} keys={["Projects"]} layout="vertical" /></Card></div>
+        <div className="card" style={{ marginTop: 14 }}><h3>Projects</h3>
+          <Table head={["Title", "Department", "Funder", "Year granted", "Themes", "Methods"]} rows={[...rows].sort((a, b) => (b.year || 0) - (a.year || 0)).map((r) => [<a href={r.link} target="_blank" rel="noreferrer">{r.title}</a>, r.dept, r.funder, r.year, <Pills items={r.themes} />, <Pills items={r.methods} />])} /></div></>}</>}
   </>);
 }
+
 const Click = ({ data, onPick }) => (<ResponsiveContainer><BarChart data={data} layout="vertical" margin={{ left: 90 }}><CartesianGrid strokeOpacity={0.15} />
   <XAxis type="number" allowDecimals={false} /><YAxis type="category" dataKey="name" width={190} tick={{ fontSize: 12 }} /><Tooltip />
   <Bar dataKey="count" fill="#0B6E4F" cursor="pointer" onClick={(d) => onPick(d.name)} /></BarChart></ResponsiveContainer>);

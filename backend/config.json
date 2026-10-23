@@ -145,5 +145,12 @@
   ],
   "group_rename": {
     "EU Government": "European Commission"
-  }
+  },
+  "oxford_depts": [
+    "Geography - SoGE",
+    "Smith School of Enterprise and the Env",
+    "Oxford Martin School",
+    "Environmental Change Institute SoGE",
+    "Transport Studies Unit SoGE"
+  ]
 }

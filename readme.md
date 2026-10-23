@@ -27,10 +27,11 @@ Open http://localhost:5000.
 
 Development with hot reload: run `python backend/app.py` in one terminal and `cd frontend && npm run dev` in another, then open http://localhost:5173.
 
-## Research themes tab (live GtR)
-- **Our awarded projects:** looks up every project title in `project_summary.csv` on the GtR API, keeps exact-title matches, and tags themes and methods from the abstract.
-- **GtR search:** type any topic to see which themes and methods appear in funded projects.
-- Results are cached for 6 hours. "Refresh from GtR" fetches new data. Click a bar to filter the project list.
+## Research themes and live projects (UKRI)
+- Both tabs use projects from the University of Oxford in the departments listed under `oxford_depts` in `backend/config.json` (Geography - SoGE, Smith School, Oxford Martin School, Environmental Change Institute, Transport Studies Unit).
+- The starting list is `data/gtr_awards.csv`. The backend then asks the UKRI Gateway API for abstracts and for any new projects in those departments. Results are cached for 6 hours. The Update button fetches fresh data.
+- If the UKRI API cannot be reached, themes are tagged from project titles only and no new projects are added.
+- Live projects keeps all internal records, links them to UKRI where the title matches, and adds extra live projects found on UKRI (marked "UKRI Gateway").
 - Change the theme and method keywords in `backend/config.json`. No code changes needed.
 
 ## Update data
@@ -38,6 +39,6 @@ Replace the CSVs in `data/` (same columns) and restart. Remove name columns (PI/
 
 ## Limits
 - GtR only covers UKRI and Innovate UK funding. Other funders will not match.
-- Title matching is exact, so projects with different internal titles are missed.
+- Linking internal projects to UKRI uses exact title matching, so differently named projects are shown as separate rows.
 - Keyword tagging is a first pass. For deeper theme analysis use an LLM on the abstracts.
 - Data is Smith School only. Add other departments' exports to include them.

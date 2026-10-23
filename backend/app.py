@@ -80,29 +80,48 @@ def data():
     return jsonify({"apps": apps.replace({np.nan: None}).to_dict("records"), "projects": proj.replace({np.nan: None}).to_dict("records"),
                     "gtr": load_gtr().replace({np.nan: None}).to_dict("records")})
 
-@app.get("/api/themes/own")
-def themes_own():
-    """Live GtR lookup (exact title match) for our own awarded projects."""
-    def run():
-        _, proj = load()
-        def one(title):
-            try: return next((p for p in gtr_fetch(title, size=10) if p.get("title", "").strip().lower() == title.strip().lower()), None)
-            except Exception: return None
-        with ThreadPoolExecutor(6) as ex: hits = list(ex.map(one, proj["title"].dropna().tolist()))
-        rows = [shape(h) for h in hits if h]
-        return {"matched": len(rows), "total": len(proj), "rows": rows, **summarise(rows), "fetched": dt.datetime.now().isoformat(timespec="minutes")}
-    try: return jsonify(cached("own", run))
-    except Exception as e: return jsonify({"error": f"GtR unavailable: {e}"}), 502
+def detail(i):
+    try:
+        r = requests.get(f"{GTR}/{i}", headers={"Accept": "application/json"}, timeout=25); r.raise_for_status(); return r.json()
+    except Exception: return {}
 
-@app.get("/api/themes/search")
-def themes_search():
-    """Landscape view: what topics/methods appear for any GtR search term."""
-    q = request.args.get("q", CFG["gtr_default_search"]).strip()
+def discover(known):
+    """Best effort: find further Oxford projects in the chosen departments straight from the UKRI API."""
+    out = []
+    try:
+        base = "https://gtr.ukri.org/gtr/api/organisations"
+        orgs = requests.get(base, params={"q": "University of Oxford", "s": 10}, headers={"Accept": "application/json"}, timeout=25).json().get("organisation", [])
+        oid = next(o["id"] for o in orgs if o.get("name", "").strip().lower() == "university of oxford")
+        first = requests.get(f"{base}/{oid}/projects", params={"s": 100, "p": 1}, headers={"Accept": "application/json"}, timeout=40).json()
+        def page(p): return requests.get(f"{base}/{oid}/projects", params={"s": 100, "p": p}, headers={"Accept": "application/json"}, timeout=40).json().get("project", [])
+        with ThreadPoolExecutor(6) as ex: pages = list(ex.map(page, range(2, int(first.get("totalPages", 1)) + 1)))
+        for p in first.get("project", []) + [x for pg in pages for x in pg]:
+            if p.get("leadOrganisationDepartment") in CFG["oxford_depts"] and p.get("id") not in known: out.append(p)
+    except Exception: pass
+    return out
+
+@app.get("/api/oxford")
+def oxford():
+    """Oxford projects for the chosen departments: our UKRI file plus anything new found on the UKRI API."""
     def run():
-        rows = [shape(p) for p in gtr_fetch(q, pages=2)]
-        return {"query": q, "rows": rows, **summarise(rows), "fetched": dt.datetime.now().isoformat(timespec="minutes")}
-    try: return jsonify(cached("q:" + q.lower(), run))
-    except Exception as e: return jsonify({"error": f"GtR unavailable: {e}"}), 502
+        g = pd.read_csv(ROOT / "data" / "gtr_awards.csv"); g = g[g["dept"].isin(CFG["oxford_depts"])]
+        seeds = g.replace({np.nan: None}).to_dict("records"); known = {r["id"] for r in seeds}
+        extra = discover(known)
+        ids = [r["id"] for r in seeds] + [p["id"] for p in extra]
+        with ThreadPoolExecutor(6) as ex: det = dict(zip(ids, ex.map(detail, ids)))
+        today = dt.date.today().isoformat(); rows = []
+        for r in seeds:
+            p = det.get(r["id"]) or {}; text = f'{r["title"]} {p.get("abstractText", "")}'
+            rows.append({"id": r["id"], "title": r["title"], "dept": r["dept"], "funder": r["funder"], "year": r["year"], "start": r["start"], "end": r["end"], "value": r["award"],
+                         "live": r["Status"] == "Active" or (r["end"] or "") >= today, "link": r["url"], "themes": tag(text, "themes"), "methods": tag(text, "methods")})
+        for p in extra:
+            f = p.get("fund") or {}; full = det.get(p["id"]) or p; text = f'{p.get("title", "")} {full.get("abstractText", "")}'
+            ids_ = (p.get("identifiers") or {}).get("identifier", []); ref = next((i["value"] for i in ids_ if i.get("value")), "")
+            rows.append({"id": p["id"], "title": p.get("title"), "dept": p.get("leadOrganisationDepartment"), "funder": p.get("leadFunder"), "year": int((f.get("start") or "0000")[:4]) or None,
+                         "start": (f.get("start") or "")[:10], "end": (f.get("end") or "")[:10], "value": f.get("valuePounds"), "live": p.get("status") == "Active",
+                         "link": f"https://gtr.ukri.org/projects?ref={ref}" if ref else p.get("href"), "themes": tag(text, "themes"), "methods": tag(text, "methods")})
+        return {"rows": rows, "fetched": dt.datetime.now().isoformat(timespec="minutes")}
+    return jsonify(cached("oxford", run))
 
 @app.get("/", defaults={"path": ""})
 @app.get("/<path:path>")
